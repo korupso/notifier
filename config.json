@@ -1,3 +1,4 @@
 {
-    "port": 42088
+    "port": 42088,
+    "mongoConnection": "mongodb://mecjoe:sehr sicheräs passwort für d'notifier datäbank@localhost:27017/notifier?authSource=admin"
 }
