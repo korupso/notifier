@@ -1,10 +1,9 @@
 import mongoose, { Schema } from 'mongoose';
-import express from 'express';
+import bcrypt from 'bcrypt';
+import express, { Response } from 'express';
 var Router = express.Router();
 
-const connect = (connectionString: string, cb: { (mongoose: typeof import('mongoose')): any }) => {
-    mongoose.connect(connectionString, { useCreateIndex: true, useNewUrlParser: true, useUnifiedTopology: true, useFindAndModify: false, promiseLibrary: global.Promise }).then(mongoose => cb(mongoose));
-}
+const connect = (connectionString: string, secret: string, connectionCallback: { (mongoose: typeof import('mongoose')): void }) => mongoose.connect(connectionString, { useCreateIndex: true, useNewUrlParser: true, useUnifiedTopology: true, useFindAndModify: false, promiseLibrary: global.Promise }).then(connection => connectionCallback(connection));
 
 const createModel = (name: string, ...fields: { name: string, options: { type: "Array" | "Boolean" | "Buffer" | "Date" | "Decimal128" | "DocumentArray" | "Embedded" | "Map" | "Mixed" | "Number" | "ObjectId" | "String" | Schema.Types.Array | Schema.Types.Boolean | Schema.Types.Buffer | Schema.Types.Date | Schema.Types.Decimal128 | Schema.Types.DocumentArray | Schema.Types.Embedded | Schema.Types.Map | Schema.Types.Mixed | Schema.Types.Number | Schema.Types.ObjectId | Schema.Types.String, required?: boolean, default?: any | Function, select?: boolean, validate?: Function, get?: Function, set?: Function, alias?: string, immutable?: boolean, transform?: Function, unique?: boolean }, public?: boolean }[]) => {
     const Schema = mongoose.Schema;
@@ -32,18 +31,27 @@ const createModel = (name: string, ...fields: { name: string, options: { type: "
 
     schema.set('toObject', readOptions);
 
-    // TODO: remove private fields when reading
-    schema
+    schema.pre('save', function (next) {
+        var doc = this;
+        privateFields.forEach(field => {
+            if (doc.isModified(field)) bcrypt.genSalt((err, salt) => {
+                if (err) return next(err);
+                bcrypt.hash(doc[field], salt, (err, encrypted) => {
+                    if (err) return next(err);
+                    doc[field] = encrypted;
+                    return next();
+                });
+            });
+        });
+    });
 
-    return new Model(mongoose.model(name, schema), Router);
+    return new Model(mongoose.model(name, schema), Router, privateFields);
 }
-
-// const deleteUser = (idOrUsername, cb) => isValidID(idOrUsername) ? User.findByIdAndDelete(idOrUsername, (err, user) => cb(!err && !user ? "User with id \"" + idOrUsername + "\" does not exist" : err, user)) : User.findOneAndRemove({ username: idOrUsername }, (err, user) => cb(!err && !user ? "User with username \"" + idOrUsername + "\" does not exist" : err, user));
 
 class Model {
     private endpoints: { method: "post" | "get" | "put" | "delete", relPath: string }[] = [];
 
-    constructor(private mongoModel: mongoose.Model<mongoose.Document, {}>, private router: typeof Router) { }
+    constructor(private mongoModel: mongoose.Model<mongoose.Document, {}>, private router: typeof Router, private privateFields: string[]) { }
 
     addEndpoint = (relPath: string, operation: "create" | "readById" | "readByField" | "readAll" | "updateById" | "updateByField" | "deleteById" | "deleteByField"): Model => {
         var method: "post" | "get" | "put" | "delete" = operation.slice(0, 4) === "create" ? "post" : operation.slice(0, 4) === "read" ? "get" : operation.slice(0, 6) === "update" ? "put" : "delete";
@@ -53,7 +61,8 @@ class Model {
         switch (operation) {
             case "create":
                 this.router.post(relPath, (req, res, next) => {
-                    this.mongoModel.create(req.body, (err: any, docs: mongoose.Document[]) => {
+                    if (req.body._id || req.body.id) next("Illegal parameter");
+                    else this.mongoModel.create(req.body, (err: any, docs: mongoose.Document[]) => {
                         if (err) next(err);
                         else res.status(200).json(docs.length === 1 ? docs[0] : docs);
                     });
@@ -62,7 +71,7 @@ class Model {
             case "readById":
                 this.router.get(relPath, (req, res, next) => {
                     this.mongoModel.findById(req.params.id, (err, doc) => {
-                        if (err) next(err);
+                        if (err || !doc) next(err || this.mongoModel.modelName + " with id '" + req.params.id + "' does not exist");
                         else res.status(200).json(doc);
                     });
                 });
@@ -70,7 +79,7 @@ class Model {
             case "readByField":
                 this.router.get(relPath, (req, res, next) => {
                     this.mongoModel.find(req.body, (err, docs) => {
-                        if (err) next(err);
+                        if (err || this.privateFields.every(field => req.body[field])) next(err || "Illegal parameter");
                         else res.status(200).json(docs.length === 1 ? docs[0] : docs);
                     });
                 });
@@ -122,7 +131,26 @@ class Model {
     getRouter = () => this.router;
 }
 
-export { createModel, connect };
+const errorHandler = (err: any, req: any, res: Response, next: any) => {
+    var status = 500;
+    var type = "text/plain";
+    var message = "An unknown error has occurred";
+
+    if (err.errors) {
+        var msg = err._message + ":";
+        Object.keys(err.errors).forEach(error => msg += "\n\t" + capitalize(err.errors[error].properties.message.replace(/Path `(.+)`( is required)./g, "$1$2")));
+        status = 400;
+        message = msg;
+    } else if (typeof err === "string") {
+        if (/does not exist$/.test(err)) status = 404, message = err;
+        else if (err === "Illegal parameter") status = 400, message = err;
+    }
+    return res.status(status).type(type).send(message);
+}
+
+const capitalize = (str: string) => str.replace(/^\w/, c => c.toUpperCase());
+
+export { createModel, connect, errorHandler };
 
 /* switch (operation) {
     case "create":

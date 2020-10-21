@@ -14,11 +14,11 @@ app.use(bodyParser.json());
 app.use(cookieParser());
 app.use(cors({ origin: (origin, callback) => callback(null, true), credentials: true }));
 
-import { port, dbConnection } from './config.json';
+import { port, dbConnection, secret } from './config.json';
 
-import { connect, createModel } from './modules/mongodb-handler.module';
+import { connect, createModel, errorHandler } from './modules/mongodb-handler.module';
 
-connect(dbConnection, mongoose => {
+connect(dbConnection, secret, mongoose => {
     var UserModel = createModel("User", {
         name: "username",
         options: { type: "String", required: true, unique: true },
@@ -37,7 +37,7 @@ connect(dbConnection, mongoose => {
 
     app.use('/users', UserModel.getRouter());
 
-    app.use(require('./middleware/error-handler'));
+    app.use(errorHandler);
 
     app.listen(port, () => {
         console.log('Server listening on port ' + port);

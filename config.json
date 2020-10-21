@@ -1,4 +1,5 @@
 {
     "port": 42088,
-    "dbConnection": "mongodb://mecjoe:sehr sicheräs passwort für d'notifier datäbank@localhost:27017/notifier?authSource=admin"
+    "dbConnection": "mongodb://mecjoe:sehr sicheräs passwort für d'notifier datäbank@localhost:27017/notifier?authSource=admin",
+    "secret": "leider bruch ich nomal ès passwort, eifach diesmal für d'verschlüsselig vo de privatè fälder"
 }
