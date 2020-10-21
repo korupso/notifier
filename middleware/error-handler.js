@@ -5,7 +5,7 @@ errorHandler = (err, req, res, next) => {
     } else if (typeof err === "string") {
         if (/does not exist$/.test(err)) errRes = { status: 404, message: err };
     }
-    return res.status(errRes.status).send(errRes.message);
+    return res.status(errRes.status).send(err);
 }
 
 module.exports = errorHandler;
